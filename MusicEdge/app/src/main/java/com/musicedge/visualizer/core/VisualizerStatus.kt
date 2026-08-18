@@ -17,6 +17,8 @@ object VisualizerStatus {
         val appLabel: String? = null,
         val title: String? = null,
         val artist: String? = null,
+        /** True while the audio backend delivers real signal, not just silence. */
+        val audioAvailable: Boolean = false,
     )
 
     private val _snapshot = MutableStateFlow(Snapshot())

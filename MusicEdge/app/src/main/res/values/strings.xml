@@ -2,10 +2,10 @@
     <string name="app_name">Music Edge</string>
 
     <string name="home_title">Music Edge</string>
-    <string name="home_subtitle">Edge visualizer for your music</string>
+    <string name="home_subtitle">Animated gradient edge for your music</string>
 
     <string name="visualizer">Visualizer</string>
-    <string name="visualizer_summary">Show the edge line while music is playing</string>
+    <string name="visualizer_summary">Show the gradient edge while music is playing</string>
 
     <string name="status">Status</string>
     <string name="status_disabled">Off</string>
@@ -20,17 +20,46 @@
     <string name="permission_overlay_title">Display over other apps</string>
     <string name="permission_overlay_reason">Needed to draw the visualization around your screen.</string>
     <string name="permission_notifications_title">Notification access</string>
-    <string name="permission_notifications_reason">Needed to detect which music app is currently playing. The app never reads your notifications.</string>
+    <string name="permission_notifications_reason">Needed to detect which music app is currently playing. Only the media session is read, never notification text.</string>
+    <string name="permission_audio_title">Audio analysis</string>
+    <string name="permission_audio_reason">Needed by the Android Visualizer API for Bass Pulse. Nothing is recorded or stored.</string>
     <string name="permission_granted">Granted</string>
     <string name="permission_missing">Not granted</string>
     <string name="grant">Grant</string>
 
-    <string name="appearance">Appearance</string>
-    <string name="color">Color</string>
+    <string name="gradient_colors">Gradient colors</string>
+    <string name="gradient_colors_summary">Six colors blended into one seamless loop. Tap a color to change its shade and opacity.</string>
+    <string name="color_slot">Color %1$d</string>
+    <string name="pick_color">Pick a color</string>
+    <string name="hue">Hue</string>
+    <string name="opacity">Opacity</string>
+    <string name="opacity_value">Opacity %1$d%%</string>
+    <string name="select">Select</string>
+    <string name="cancel">Cancel</string>
+    <string name="reset_palette">Reset palette</string>
+
+    <string name="animation_speed">Animation speed</string>
+    <string name="speed_value">%1$.2fx</string>
+    <string name="slow">Slow</string>
+    <string name="fast">Fast</string>
+
     <string name="thickness">Thickness</string>
-    <string name="brightness">Brightness</string>
     <string name="thickness_value">%1$.1f dp</string>
+
+    <string name="glow">Glow</string>
+    <string name="glow_off">Off</string>
+    <string name="glow_max">Max</string>
+
+    <string name="brightness">Brightness</string>
     <string name="percent_value">%1$d%%</string>
+
+    <string name="effect">Effect</string>
+    <string name="effect_flow">Flow</string>
+    <string name="effect_flow_summary">The gradient keeps moving around the screen</string>
+    <string name="effect_bass_pulse">Bass Pulse</string>
+    <string name="effect_bass_pulse_summary">Flow plus thickness and glow reacting to the bass</string>
+    <string name="effect_audio_hint">Bass Pulse needs the audio permission to react to sound.</string>
+    <string name="effect_audio_silent">No audio data from the system mixer yet — the line still flows, but it cannot react to the beat.</string>
 
     <string name="performance">Performance</string>
     <string name="performance_battery_saver">Battery Saver</string>
@@ -40,7 +69,12 @@
     <string name="performance_120_warning">Higher battery usage.</string>
 
     <string name="music_apps">Music Apps</string>
-    <string name="music_apps_mvp_note">Stage 1 uses a built-in list of known music apps. A full picker arrives in a later stage.</string>
+    <string name="music_apps_summary">%1$d selected</string>
+    <string name="music_apps_players">Music players</string>
+    <string name="music_apps_other">Other apps</string>
+    <string name="music_apps_hint">The visualizer runs only for the apps you enable here. Apps are detected by their media session, not by what is on screen.</string>
+    <string name="music_apps_loading">Loading apps…</string>
+    <string name="back">Back</string>
 
-    <string name="stage_note">Stage 1 (MVP): detection, overlay and a static edge line. FFT-driven effects come next.</string>
+    <string name="preview">Preview</string>
 </resources>

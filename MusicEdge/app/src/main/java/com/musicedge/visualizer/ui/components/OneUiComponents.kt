@@ -1,6 +1,7 @@
 package com.musicedge.visualizer.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +14,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -24,8 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 
 /** Large rounded card with One UI-ish padding. */
@@ -112,6 +118,10 @@ fun LabeledValueRow(
     }
 }
 
+/**
+ * Slider row with an optional pair of end labels ("Slow"/"Fast"). Changes are
+ * reported continuously so the overlay updates while the user drags.
+ */
 @Composable
 fun SliderRow(
     title: String,
@@ -120,6 +130,8 @@ fun SliderRow(
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    startLabel: String? = null,
+    endLabel: String? = null,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         LabeledValueRow(title = title, value = valueLabel)
@@ -128,6 +140,21 @@ fun SliderRow(
             onValueChange = onValueChange,
             valueRange = valueRange,
         )
+        if (startLabel != null || endLabel != null) {
+            Row(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = startLabel.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = endLabel.orEmpty(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -162,34 +189,117 @@ fun ChoiceRow(
     }
 }
 
+/** Row that opens another screen. */
 @Composable
-fun ColorSwatchRow(
-    colors: List<Int>,
-    selectedColor: Int,
-    onColorSelected: (Int) -> Unit,
+fun NavigationRow(
+    title: String,
+    subtitle: String?,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        colors.forEach { argb ->
-            val selected = argb == selectedColor
-            Surface(
-                modifier = Modifier
-                    .size(if (selected) 40.dp else 34.dp)
-                    .clip(CircleShape)
-                    .clickable { onColorSelected(argb) },
-                shape = CircleShape,
-                color = Color(argb),
-                border = if (selected) {
-                    BorderStroke(3.dp, MaterialTheme.colorScheme.onSurface)
-                } else {
-                    null
-                },
-            ) {}
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
+        Text(
+            text = "›",
+            style = MaterialTheme.typography.titleLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * The six palette slots; tapping one opens the colour picker. Each swatch sits on a
+ * checkerboard so a colour with reduced opacity reads as translucent rather than as
+ * a different shade.
+ */
+@Composable
+fun GradientSwatchRow(
+    colors: List<Int>,
+    onSlotClick: (index: Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val checkerColors = rememberCheckerboardColors()
+    val cellPx = with(LocalDensity.current) { CHECKER_CELL_DP.dp.toPx() }
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        colors.forEachIndexed { index, argb ->
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(44.dp)
+                    .clip(CircleShape)
+                    .drawBehind { drawCheckerboard(checkerColors, cellPx) }
+                    .background(Color(argb))
+                    .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                    .clickable { onSlotClick(index) },
+            )
+        }
+    }
+}
+
+
+/** Row of the Music Apps list: icon, label, switch. */
+@Composable
+fun AppToggleRow(
+    label: String,
+    packageName: String,
+    icon: ImageBitmap?,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 4.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (icon != null) {
+            Image(
+                bitmap = icon,
+                contentDescription = null,
+                modifier = Modifier.size(40.dp),
+            )
+        } else {
+            Spacer(Modifier.size(40.dp))
+        }
+        Spacer(Modifier.width(14.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = packageName,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

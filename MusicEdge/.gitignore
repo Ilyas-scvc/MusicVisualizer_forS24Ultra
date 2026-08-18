@@ -1,0 +1,17 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.keystore
+
+# Gradle wrapper is generated locally (see README)
+gradle/wrapper/
+gradlew
+gradlew.bat

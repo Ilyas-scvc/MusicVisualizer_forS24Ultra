@@ -1,10 +1,12 @@
 package com.musicedge.visualizer.core
 
 import android.content.Context
+import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.musicedge.visualizer.audio.AudioEngine
+import com.musicedge.visualizer.audio.VisualizerAudioSource
 import com.musicedge.visualizer.effects.EffectRegistry
-import com.musicedge.visualizer.media.MediaSessionObserver
+import com.musicedge.visualizer.media.PlaybackDetector
 import com.musicedge.visualizer.media.PlaybackSnapshot
 import com.musicedge.visualizer.overlay.EdgeStyle
 import com.musicedge.visualizer.overlay.OverlayManager
@@ -20,13 +22,14 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /**
- * The state machine that ties media detection, screen state, settings and the
- * overlay together.
+ * The state machine that ties playback detection, screen state, settings, audio and
+ * the overlay together.
  *
- * Everything runs on the main thread: the inputs (media session callbacks, screen
- * broadcasts, settings flow) are all delivered there, and the only consumer is the
- * view hierarchy, which is main-thread bound anyway. That removes the need for
- * locking entirely; the class is not safe to touch from another thread.
+ * Everything runs on the main thread: the inputs (media controller callbacks,
+ * notification events, screen broadcasts, the settings flow) are all delivered
+ * there, and the only consumer is the view hierarchy, which is main-thread bound
+ * anyway. That removes the need for locking entirely; the class is not safe to touch
+ * from another thread.
  *
  * Lifetime is owned by [com.musicedge.visualizer.media.MediaEdgeListenerService].
  */
@@ -42,24 +45,32 @@ class VisualizerController(private val context: Context) {
         evaluate()
     }
 
-    private val mediaObserver = MediaSessionObserver(
+    private val playbackDetector = PlaybackDetector(
         context = context,
         listenerComponent = PermissionManager.listenerComponent(context),
         isAllowed = { packageName -> packageName in settingsRepository.current.allowedPackages },
-        onChanged = { snapshot ->
+        onPlaybackChanged = { snapshot ->
             playback = snapshot
             evaluate()
         },
+        onPackageDiscovered = settingsRepository::rememberDiscoveredPackage,
     )
 
     private var state = VisualizerState.DISABLED
     private var playback = PlaybackSnapshot.NONE
     private var screenInteractive = true
     private var listenerConnected = false
-    private var mediaObserverStarted = false
+    private var detectorStarted = false
     private var appliedEffectId: String? = null
+    private var audioSourceAttached = false
     private var evaluating = false
     private var reevaluateRequested = false
+
+    init {
+        audioEngine.onAvailabilityChanged = { available ->
+            VisualizerStatus.update { it.copy(audioAvailable = available) }
+        }
+    }
 
     fun onListenerConnected() {
         if (listenerConnected) return
@@ -80,15 +91,29 @@ class VisualizerController(private val context: Context) {
     fun onListenerDisconnected() {
         if (!listenerConnected) return
         listenerConnected = false
-        stopMediaObserver()
+        stopDetector()
         screenObserver.stop()
         teardownOverlay()
         state = VisualizerState.IDLE
         publishStatus()
     }
 
+    /**
+     * Supplies the notifications that already exist when detection starts. Set by
+     * the listener service, because only a NotificationListenerService can read them.
+     */
+    var activeNotificationsProvider: (() -> Array<StatusBarNotification>?)? = null
+
+    /** Media notifications are the fallback discovery path; see [PlaybackDetector]. */
+    fun onNotificationPosted(notification: StatusBarNotification) =
+        playbackDetector.onNotificationPosted(notification)
+
+    fun onNotificationRemoved(notification: StatusBarNotification) =
+        playbackDetector.onNotificationRemoved(notification)
+
     fun destroy() {
         onListenerDisconnected()
+        activeNotificationsProvider = null
         scope.cancel()
         VisualizerStatus.reset()
     }
@@ -96,7 +121,7 @@ class VisualizerController(private val context: Context) {
     /**
      * Recomputes the target state from every input and performs the transition.
      *
-     * Transitions can synchronously produce new input - starting the media observer
+     * Transitions can synchronously produce new input - starting the detector
      * immediately reports the current session, for example - so the call is
      * re-entrancy safe: a nested request re-runs the pass instead of interleaving
      * with it.
@@ -131,7 +156,7 @@ class VisualizerController(private val context: Context) {
 
         when (target) {
             VisualizerState.DISABLED, VisualizerState.IDLE -> {
-                stopMediaObserver()
+                stopDetector()
                 teardownOverlay()
             }
 
@@ -139,11 +164,11 @@ class VisualizerController(private val context: Context) {
                 // Reached either from a fade that finished or from a cold start;
                 // in both cases nothing should be on screen.
                 if (previous != VisualizerState.PAUSED_FADE) teardownOverlay()
-                startMediaObserver()
+                startDetector()
             }
 
             VisualizerState.ACTIVE -> {
-                startMediaObserver()
+                startDetector()
                 activate(settings)
             }
 
@@ -184,8 +209,33 @@ class VisualizerController(private val context: Context) {
         } else {
             overlayManager.updateStyle(style)
         }
-        audioEngine.start(settings.performanceMode)
+        startAudio(settings)
         overlayManager.fadeIn(AppSettings.FADE_IN_MILLIS)
+    }
+
+    /**
+     * Audio capture only runs for effects that need it, and only while the overlay is
+     * actually on screen. Without the RECORD_AUDIO permission the source refuses to
+     * start and the effect simply renders its idle look.
+     */
+    private fun startAudio(settings: AppSettings) {
+        if (!EffectRegistry.requiresAudio(settings.effectId)) {
+            stopAudio()
+            return
+        }
+        if (!audioSourceAttached) {
+            audioEngine.attachSource(VisualizerAudioSource(context))
+            audioSourceAttached = true
+        }
+        audioEngine.start(settings.performanceMode)
+    }
+
+    private fun stopAudio() {
+        audioEngine.stop()
+        if (audioSourceAttached) {
+            audioEngine.attachSource(null)
+            audioSourceAttached = false
+        }
     }
 
     private fun beginFadeOut() {
@@ -199,7 +249,7 @@ class VisualizerController(private val context: Context) {
     }
 
     private fun teardownOverlay() {
-        audioEngine.stop()
+        stopAudio()
         overlayManager.hide()
         appliedEffectId = null
     }
@@ -207,7 +257,7 @@ class VisualizerController(private val context: Context) {
     /** Applies settings that can take effect without a state transition. */
     private fun applyLiveSettings(settings: AppSettings) {
         // The whitelist may have changed while an app was already playing.
-        if (mediaObserverStarted) mediaObserver.refresh()
+        if (detectorStarted) playbackDetector.refresh()
 
         if (!overlayManager.isShowing) return
         overlayManager.updateStyle(buildStyle(settings))
@@ -215,25 +265,32 @@ class VisualizerController(private val context: Context) {
         if (settings.effectId != appliedEffectId) {
             overlayManager.updateEffect(EffectRegistry.create(settings.effectId))
             appliedEffectId = settings.effectId
+            startAudio(settings)
         }
     }
 
     private fun buildStyle(settings: AppSettings) = EdgeStyle(
-        colorArgb = settings.colorArgb,
+        gradientColors = settings.gradientColors,
         thicknessPx = settings.thicknessDp * context.resources.displayMetrics.density,
         brightness = settings.brightness,
+        glowIntensity = settings.glowIntensity,
+        animationSpeed = settings.animationSpeed,
     )
 
-    private fun startMediaObserver() {
-        if (mediaObserverStarted) return
-        mediaObserver.start()
-        mediaObserverStarted = true
+    private fun startDetector() {
+        if (detectorStarted) return
+        playbackDetector.start()
+        detectorStarted = true
+        // Music may already be playing when detection starts - for example when the
+        // user flips the switch mid-track - so the fallback needs the notifications
+        // that are already on screen, not just the ones posted from now on.
+        playbackDetector.seedNotifications(activeNotificationsProvider?.invoke())
     }
 
-    private fun stopMediaObserver() {
-        if (!mediaObserverStarted) return
-        mediaObserver.stop()
-        mediaObserverStarted = false
+    private fun stopDetector() {
+        if (!detectorStarted) return
+        playbackDetector.stop()
+        detectorStarted = false
         playback = PlaybackSnapshot.NONE
     }
 

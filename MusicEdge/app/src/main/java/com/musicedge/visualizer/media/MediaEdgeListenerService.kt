@@ -9,16 +9,16 @@ import com.musicedge.visualizer.core.VisualizerController
  *
  * Why a NotificationListenerService and not a foreground service:
  *  - notification access is required anyway, because it is the only way a
- *    third-party app may call [android.media.session.MediaSessionManager.getActiveSessions];
+ *    third-party app may call MediaSessionManager.getActiveSessions();
  *  - the system binds this service as long as access is granted and rebinds it
  *    after a reboot, so the app survives without a permanent notification, without
  *    a wakelock and without any background-start workaround;
  *  - when the user revokes access the system unbinds us, which is exactly when the
  *    engine should stop.
  *
- * Privacy: [onNotificationPosted] and [onNotificationRemoved] are deliberately not
- * overridden. The app never reads notification content - the permission is used
- * purely as the token for media session access.
+ * Privacy: the notification callbacks are forwarded only so that
+ * [com.musicedge.visualizer.media.MediaNotificationObserver] can read one extra -
+ * the media session token. No notification text, title or icon is ever read.
  */
 class MediaEdgeListenerService : NotificationListenerService() {
 
@@ -27,6 +27,7 @@ class MediaEdgeListenerService : NotificationListenerService() {
     override fun onListenerConnected() {
         super.onListenerConnected()
         val controller = controller ?: VisualizerController(this).also { this.controller = it }
+        controller.activeNotificationsProvider = { runCatching { activeNotifications }.getOrNull() }
         controller.onListenerConnected()
     }
 
@@ -41,8 +42,11 @@ class MediaEdgeListenerService : NotificationListenerService() {
         super.onDestroy()
     }
 
-    // Explicitly ignored: see the class comment.
-    override fun onNotificationPosted(sbn: StatusBarNotification?) = Unit
+    override fun onNotificationPosted(sbn: StatusBarNotification?) {
+        sbn?.let { controller?.onNotificationPosted(it) }
+    }
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) = Unit
+    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
+        sbn?.let { controller?.onNotificationRemoved(it) }
+    }
 }

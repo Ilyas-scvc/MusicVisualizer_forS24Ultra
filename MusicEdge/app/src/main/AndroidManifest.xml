@@ -2,29 +2,33 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-        Stage 1 (MVP) permissions only.
-
-        SYSTEM_ALERT_WINDOW  - draw the edge overlay on top of other apps.
-                               Granted by the user in system settings, not at runtime.
+        SYSTEM_ALERT_WINDOW    - draw the edge overlay on top of other apps.
+                                 Granted by the user in system settings.
         RECEIVE_BOOT_COMPLETED - ask the system to rebind our notification listener
-                               after a reboot / app update.
+                                 after a reboot / app update.
+        RECORD_AUDIO           - required by android.media.audiofx.Visualizer on the
+                                 output mix (session 0). Only requested when the user
+                                 turns on an effect that reacts to sound, and no audio
+                                 is ever recorded or stored - the FFT result lives in
+                                 memory for one frame.
+        MODIFY_AUDIO_SETTINGS  - required to attach an AudioEffect (the Visualizer).
 
         Notification access (BIND_NOTIFICATION_LISTENER_SERVICE below) is what makes
-        MediaSessionManager.getActiveSessions() legal for a third-party app. We never
-        read notification content - see MediaEdgeListenerService.
-
-        Stage 2 will additionally need MODIFY_AUDIO_SETTINGS and RECORD_AUDIO for the
-        AudioEffect Visualizer. They are intentionally NOT declared yet: the MVP does
-        no audio capture, and asking for a microphone permission before it is used
-        would be both misleading and a Play policy problem.
+        MediaSessionManager.getActiveSessions() legal for a third-party app, and it
+        also carries the media-notification fallback. Only the media session token
+        extra is read - never notification text.
     -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!--
-        Package visibility (Android 11+): we need to resolve the label of the app that
-        currently owns the media session, and later list installed music apps for the
-        whitelist screen. Scoped <queries> instead of QUERY_ALL_PACKAGES.
+        Package visibility (Android 11+). Scoped <queries> instead of
+        QUERY_ALL_PACKAGES: media browser services and APP_MUSIC cover proper music
+        players, audio/* covers file-based players, and MAIN/LAUNCHER lets the Music
+        Apps screen list the remaining launchable apps so a player that declares none
+        of the media filters can still be enabled by the user.
     -->
     <queries>
         <intent>
@@ -33,6 +37,14 @@
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.APP_MUSIC" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="audio/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
         </intent>
     </queries>
 

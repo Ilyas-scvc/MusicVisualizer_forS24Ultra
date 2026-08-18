@@ -1,12 +1,10 @@
 package com.musicedge.visualizer.ui.screens
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -17,13 +15,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,34 +28,48 @@ import androidx.compose.ui.unit.sp
 import com.musicedge.visualizer.R
 import com.musicedge.visualizer.core.VisualizerState
 import com.musicedge.visualizer.core.VisualizerStatus
+import com.musicedge.visualizer.effects.BassPulseEffect
+import com.musicedge.visualizer.effects.FlowEffect
 import com.musicedge.visualizer.settings.AppSettings
 import com.musicedge.visualizer.settings.PerformanceMode
 import com.musicedge.visualizer.ui.components.CardDivider
 import com.musicedge.visualizer.ui.components.ChoiceRow
-import com.musicedge.visualizer.ui.components.ColorSwatchRow
+import com.musicedge.visualizer.ui.components.ColorPickerDialog
+import com.musicedge.visualizer.ui.components.GradientEdgePreview
+import com.musicedge.visualizer.ui.components.GradientSwatchRow
 import com.musicedge.visualizer.ui.components.LabeledValueRow
+import com.musicedge.visualizer.ui.components.NavigationRow
 import com.musicedge.visualizer.ui.components.OutlinedInfoBox
 import com.musicedge.visualizer.ui.components.SectionTitle
 import com.musicedge.visualizer.ui.components.SettingsCard
 import com.musicedge.visualizer.ui.components.SliderRow
 import com.musicedge.visualizer.ui.components.ToggleRow
 
-/** Which special-access permissions are currently granted. */
+/** Which permissions are currently granted. */
 data class PermissionState(
     val overlay: Boolean,
     val notificationAccess: Boolean,
+    val audio: Boolean,
 ) {
-    val allGranted: Boolean get() = overlay && notificationAccess
+    /** Audio is optional: it is only needed by effects that react to sound. */
+    val essentialsGranted: Boolean get() = overlay && notificationAccess
 }
 
-/** Preset colors offered on the home screen; a full picker comes with the Colors screen. */
-private val PRESET_COLORS = listOf(
-    0xFF4C7DFF.toInt(),
-    0xFF9F6BFF.toInt(),
-    0xFF00D0C0.toInt(),
-    0xFFFF5C8A.toInt(),
-    0xFFFFB020.toInt(),
-    0xFFFFFFFF.toInt(),
+/** Every settings change the home screen can produce. */
+data class HomeActions(
+    val onEnabledChange: (Boolean) -> Unit,
+    val onGradientColorChange: (index: Int, color: Int) -> Unit,
+    val onResetPalette: () -> Unit,
+    val onAnimationSpeedChange: (Float) -> Unit,
+    val onThicknessChange: (Float) -> Unit,
+    val onGlowChange: (Float) -> Unit,
+    val onBrightnessChange: (Float) -> Unit,
+    val onEffectChange: (String) -> Unit,
+    val onPerformanceModeChange: (PerformanceMode) -> Unit,
+    val onGrantOverlay: () -> Unit,
+    val onGrantNotificationAccess: () -> Unit,
+    val onGrantAudio: () -> Unit,
+    val onOpenMusicApps: () -> Unit,
 )
 
 @Composable
@@ -66,15 +77,11 @@ fun HomeScreen(
     settings: AppSettings,
     status: VisualizerStatus.Snapshot,
     permissions: PermissionState,
+    actions: HomeActions,
     modifier: Modifier = Modifier,
-    onEnabledChange: (Boolean) -> Unit,
-    onColorChange: (Int) -> Unit,
-    onThicknessChange: (Float) -> Unit,
-    onBrightnessChange: (Float) -> Unit,
-    onPerformanceModeChange: (PerformanceMode) -> Unit,
-    onGrantOverlay: () -> Unit,
-    onGrantNotificationAccess: () -> Unit,
 ) {
+    var editingColorIndex by remember { mutableStateOf<Int?>(null) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -92,7 +99,7 @@ fun HomeScreen(
                     title = stringResource(R.string.visualizer),
                     subtitle = stringResource(R.string.visualizer_summary),
                     checked = settings.enabled,
-                    onCheckedChange = onEnabledChange,
+                    onCheckedChange = actions.onEnabledChange,
                 )
                 CardDivider()
                 LabeledValueRow(
@@ -107,15 +114,17 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                EdgePreview(
-                    colorArgb = settings.colorArgb,
+                GradientEdgePreview(
+                    colors = settings.gradientColors,
                     thicknessDp = settings.thicknessDp,
                     brightness = settings.brightness,
+                    glowIntensity = settings.glowIntensity,
+                    animationSpeed = settings.animationSpeed,
                 )
             }
         }
 
-        if (!permissions.allGranted) {
+        if (!permissions.essentialsGranted) {
             Column {
                 SectionTitle(stringResource(R.string.permissions))
                 SettingsCard {
@@ -123,38 +132,101 @@ fun HomeScreen(
                         title = stringResource(R.string.permission_overlay_title),
                         reason = stringResource(R.string.permission_overlay_reason),
                         granted = permissions.overlay,
-                        onGrant = onGrantOverlay,
+                        onGrant = actions.onGrantOverlay,
                     )
                     CardDivider()
                     PermissionRow(
                         title = stringResource(R.string.permission_notifications_title),
                         reason = stringResource(R.string.permission_notifications_reason),
                         granted = permissions.notificationAccess,
-                        onGrant = onGrantNotificationAccess,
+                        onGrant = actions.onGrantNotificationAccess,
                     )
                 }
             }
         }
 
         Column {
-            SectionTitle(stringResource(R.string.appearance))
+            SectionTitle(stringResource(R.string.gradient_colors))
             SettingsCard {
                 Text(
-                    text = stringResource(R.string.color),
-                    style = MaterialTheme.typography.bodyLarge,
+                    text = stringResource(R.string.gradient_colors_summary),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                ColorSwatchRow(
-                    colors = PRESET_COLORS,
-                    selectedColor = settings.colorArgb,
-                    onColorSelected = onColorChange,
+                GradientSwatchRow(
+                    colors = settings.gradientColors,
+                    onSlotClick = { index -> editingColorIndex = index },
                 )
-                CardDivider()
+                Row {
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = actions.onResetPalette) {
+                        Text(stringResource(R.string.reset_palette))
+                    }
+                }
+            }
+        }
+
+        Column {
+            SectionTitle(stringResource(R.string.effect))
+            SettingsCard {
+                ChoiceRow(
+                    title = stringResource(R.string.effect_flow),
+                    subtitle = stringResource(R.string.effect_flow_summary),
+                    selected = settings.effectId == FlowEffect.ID,
+                    onClick = { actions.onEffectChange(FlowEffect.ID) },
+                )
+                ChoiceRow(
+                    title = stringResource(R.string.effect_bass_pulse),
+                    subtitle = stringResource(R.string.effect_bass_pulse_summary),
+                    selected = settings.effectId == BassPulseEffect.ID,
+                    onClick = { actions.onEffectChange(BassPulseEffect.ID) },
+                )
+                if (settings.effectId == BassPulseEffect.ID) {
+                    if (!permissions.audio) {
+                        OutlinedInfoBox(stringResource(R.string.effect_audio_hint))
+                        Row {
+                            Spacer(Modifier.weight(1f))
+                            TextButton(onClick = actions.onGrantAudio) {
+                                Text(stringResource(R.string.grant))
+                            }
+                        }
+                    } else if (status.state == VisualizerState.ACTIVE && !status.audioAvailable) {
+                        OutlinedInfoBox(stringResource(R.string.effect_audio_silent))
+                    }
+                }
+            }
+        }
+
+        Column {
+            SectionTitle(stringResource(R.string.preview))
+            SettingsCard {
+                SliderRow(
+                    title = stringResource(R.string.animation_speed),
+                    valueLabel = stringResource(R.string.speed_value, settings.animationSpeed),
+                    value = settings.animationSpeed,
+                    valueRange = AppSettings.MIN_ANIMATION_SPEED..AppSettings.MAX_ANIMATION_SPEED,
+                    onValueChange = actions.onAnimationSpeedChange,
+                    startLabel = stringResource(R.string.slow),
+                    endLabel = stringResource(R.string.fast),
+                )
                 SliderRow(
                     title = stringResource(R.string.thickness),
                     valueLabel = stringResource(R.string.thickness_value, settings.thicknessDp),
                     value = settings.thicknessDp,
                     valueRange = AppSettings.MIN_THICKNESS_DP..AppSettings.MAX_THICKNESS_DP,
-                    onValueChange = onThicknessChange,
+                    onValueChange = actions.onThicknessChange,
+                )
+                SliderRow(
+                    title = stringResource(R.string.glow),
+                    valueLabel = stringResource(
+                        R.string.percent_value,
+                        (settings.glowIntensity * 100).toInt(),
+                    ),
+                    value = settings.glowIntensity,
+                    valueRange = AppSettings.MIN_GLOW_INTENSITY..AppSettings.MAX_GLOW_INTENSITY,
+                    onValueChange = actions.onGlowChange,
+                    startLabel = stringResource(R.string.glow_off),
+                    endLabel = stringResource(R.string.glow_max),
                 )
                 SliderRow(
                     title = stringResource(R.string.brightness),
@@ -163,8 +235,8 @@ fun HomeScreen(
                         (settings.brightness * 100).toInt(),
                     ),
                     value = settings.brightness,
-                    valueRange = 0.1f..1f,
-                    onValueChange = onBrightnessChange,
+                    valueRange = AppSettings.MIN_BRIGHTNESS..AppSettings.MAX_BRIGHTNESS,
+                    onValueChange = actions.onBrightnessChange,
                 )
             }
         }
@@ -177,7 +249,7 @@ fun HomeScreen(
                         title = performanceLabel(mode),
                         subtitle = stringResource(R.string.performance_fps, mode.targetFps),
                         selected = settings.performanceMode == mode,
-                        onClick = { onPerformanceModeChange(mode) },
+                        onClick = { actions.onPerformanceModeChange(mode) },
                     )
                 }
                 if (settings.performanceMode == PerformanceMode.ULTRA_SMOOTH) {
@@ -189,25 +261,30 @@ fun HomeScreen(
         Column {
             SectionTitle(stringResource(R.string.music_apps))
             SettingsCard {
-                LabeledValueRow(
+                NavigationRow(
                     title = stringResource(R.string.music_apps),
-                    value = settings.allowedPackages.size.toString(),
-                )
-                Text(
-                    text = stringResource(R.string.music_apps_mvp_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    subtitle = stringResource(
+                        R.string.music_apps_summary,
+                        settings.allowedPackages.size,
+                    ),
+                    onClick = actions.onOpenMusicApps,
                 )
             }
         }
 
-        Text(
-            text = stringResource(R.string.stage_note),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
         Spacer(Modifier.height(12.dp))
+    }
+
+    val editedIndex = editingColorIndex
+    if (editedIndex != null) {
+        ColorPickerDialog(
+            initialColor = settings.gradientColors[editedIndex],
+            onDismiss = { editingColorIndex = null },
+            onColorSelected = { color ->
+                actions.onGradientColorChange(editedIndex, color)
+                editingColorIndex = null
+            },
+        )
     }
 }
 
@@ -262,37 +339,6 @@ private fun PermissionRow(
     }
 }
 
-/**
- * Static preview of the line as it will look on the panel. It is a plain Canvas
- * drawing, so it costs one frame when a setting changes and nothing afterwards.
- */
-@Composable
-private fun EdgePreview(colorArgb: Int, thicknessDp: Float, brightness: Float) {
-    val color = Color(colorArgb)
-    Canvas(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(120.dp),
-    ) {
-        val stroke = thicknessDp.dp.toPx()
-        val corner = CornerRadius(28.dp.toPx(), 28.dp.toPx())
-        val inset = stroke / 2f
-        val topLeft = Offset(inset, inset)
-        val size = Size(this.size.width - stroke, this.size.height - stroke)
-
-        // Same layered-glow approach as StaticEffect, at preview scale.
-        listOf(2.8f to 0.10f, 1.7f to 0.18f, 1f to 1f).forEach { (widthScale, alphaScale) ->
-            drawRoundRect(
-                color = color.copy(alpha = brightness * alphaScale),
-                topLeft = topLeft,
-                size = size,
-                cornerRadius = corner,
-                style = Stroke(width = stroke * widthScale),
-            )
-        }
-    }
-}
-
 @Composable
 private fun performanceLabel(mode: PerformanceMode): String = stringResource(
     when (mode) {
@@ -311,7 +357,7 @@ private fun statusLabel(
     val appLabel = status.appLabel
     return when {
         !settings.enabled -> stringResource(R.string.status_disabled)
-        !permissions.allGranted -> stringResource(R.string.status_needs_permissions)
+        !permissions.essentialsGranted -> stringResource(R.string.status_needs_permissions)
         !status.listenerConnected -> stringResource(R.string.status_service_disconnected)
         status.state == VisualizerState.ACTIVE && appLabel != null ->
             stringResource(R.string.status_playing, appLabel)
